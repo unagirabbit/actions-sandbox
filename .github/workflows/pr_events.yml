@@ -11,6 +11,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Print GitHub event JSON
+        run: |
+          echo "GitHub Event JSON:"
+          cat ${{ github.event_path }}
+        shell: bash
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -23,11 +29,6 @@ jobs:
 
           with open(os.environ['GITHUB_EVENT_PATH']) as f:
               event = json.load(f)
-
-          # Dump entire event to a file for inspection
-          with open('event_dump.json', 'w') as f:
-              json.dump(event, f, indent=2)
-          print("Full GitHub event payload written to event_dump.json")
 
           message = None
           event_name = os.environ['GITHUB_EVENT_NAME']
@@ -69,13 +70,3 @@ jobs:
         shell: python
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-
-      - name: Show raw GitHub event payload
-        run: cat event_dump.json
-
-      # - name: Send Slack message
-      #   uses: slackapi/slack-github-action@v1.24.0
-      #   with:
-      #     payload-file-path: ./payload.json
-      #   env:
-      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
