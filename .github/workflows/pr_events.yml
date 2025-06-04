@@ -73,7 +73,7 @@ jobs:
               if action == 'opened':
                   head_branch = pr.get('head', {}).get('ref', 'unknown branch')
                   base_branch = pr.get('base', {}).get('ref', 'unknown branch')
-                  message = f":git_new_pr: {pr_link} {title}\nPR Created by {pr_user_login} ({head_branch} → {base_branch})"
+                  message = f":new: {pr_link} {title}\nPR Created by {pr_user_login} ({head_branch} → {base_branch})"
 
               elif action == 'edited':
                   editor = event.get('sender', {}).get('login', 'unknown user')
@@ -83,14 +83,14 @@ jobs:
                   if pr.get('merged') == True:
                       merger = pr.get('merged_by', {}).get('login', 'unknown user')
                       base_branch = pr.get('base', {}).get('ref', 'unknown branch')
-                      message = f":git_merge: {pr_link} {title}\nPR Merged by {merger} into {base_branch}"
+                      message = f":git-merge: {pr_link} {title}\nPR Merged by {merger} into {base_branch}"
                   else:
                       closer = event.get('sender', {}).get('login', 'unknown user')
-                      message = f":git_closed: {pr_link} {title}\nPR Closed by {closer}"
+                      message = f"{pr_link} {title}\nPR Closed by {closer}"
 
               elif action == 'reopened':
                   reopener = event.get('sender', {}).get('login', 'unknown user')
-                  message = f":git_reopened: {pr_link} {title}\nPR Reopened by {reopener}"
+                  message = f"{pr_link} {title}\nPR Reopened by {reopener}"
 
               elif action == 'ready_for_review':
                   sender_login = event.get('sender', {}).get('login', 'unknown user')
