@@ -23,12 +23,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Print GitHub event JSON
-        run: |
-          echo "GitHub Event JSON:"
-          cat ${{ github.event_path }}
-        shell: bash
-
       - name: Generate Slack payload
         id: generate_payload
         run: |
@@ -82,8 +76,7 @@ jobs:
               elif action == 'closed':
                   if pr.get('merged') == True:
                       merger = pr.get('merged_by', {}).get('login', 'unknown user')
-                      base_branch = pr.get('base', {}).get('ref', 'unknown branch')
-                      message = f":git-merge: {pr_link} {title}\nPR Merged by {merger} into {base_branch}"
+                      message = f":git-merge: {pr_link} {title}\nPR Merged by {merger}"
                   else:
                       closer = event.get('sender', {}).get('login', 'unknown user')
                       message = f"{pr_link} {title}\nPR Closed by {closer}"
