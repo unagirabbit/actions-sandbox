@@ -1,22 +1,23 @@
-name: Handle Pull Request Events
+name: Handle Pull Request Events and Notify Slack
 
 on:
-  issue_comment:
+  issue_comment: # PRへの通常のコメント用
     types: [created]
   pull_request:
-    types: [opened, reopened, closed, ready_for_review]
+    types:
+      - opened         # PR作成
+      - edited         # PR本文編集
+      - closed         # PRクローズ（マージ含む）
+      - reopened       # PR再オープン
+      - ready_for_review # PRレビュー準備完了
+  pull_request_review: # PRのレビュー（承認など）用
+    types: [submitted]
 
 jobs:
-  handle-pr:
+  handle-pr-and-notify-slack: # ジョブ名を修正
     runs-on: ubuntu-latest
 
     steps:
-      - name: Print GitHub event JSON
-        run: |
-          echo "GitHub Event JSON:"
-          cat ${{ github.event_path }}
-        shell: bash
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -25,147 +26,150 @@ jobs:
       - name: Generate Slack payload
         id: generate_payload
         run: |
-          # ===== ここからデバッグコード =====
-          print("--- PYTHON SCRIPT EXECUTION STARTED ---")
-          import os, json, sys
+          import os
+          import json
+          import sys
 
-          print(f"Python version: {sys.version}")
-          print(f"GITHUB_EVENT_PATH env var: {os.environ.get('GITHUB_EVENT_PATH')}")
-          print(f"GITHUB_EVENT_NAME env var: {os.environ.get('GITHUB_EVENT_NAME')}")
-
-          event_data_string = None
-          event = {}
-          github_event_path = os.environ.get('GITHUB_EVENT_PATH')
-
-          if github_event_path:
-              try:
-                  with open(github_event_path, 'r') as f:
-                      event_data_string = f.read()
-                  print("--- RAW EVENT DATA FROM GITHUB_EVENT_PATH ---")
-                  print(event_data_string) # 生のJSON文字列を出力
-                  print("--- END OF RAW EVENT DATA ---")
-                  
-                  if event_data_string:
-                      event = json.loads(event_data_string)
-                      print("JSON loaded successfully into 'event' dict.")
-                  else:
-                      print("!!! GITHUB_EVENT_PATH was empty.")
-                      
-              except Exception as e:
-                  print(f"!!! Error loading or parsing GITHUB_EVENT_PATH: {e}")
-                  print(f"Content read was: {event_data_string[:500]}...") # 読み取った内容の冒頭を表示
-                  print("--- END OF PYTHON SCRIPT DUE TO JSON LOAD ERROR ---")
-                  # exit(1) # 必要であればここで終了させる
-          else:
-              print("!!! GITHUB_EVENT_PATH environment variable not set.")
-              # exit(1) # 必要であればここで終了させる
-
-          if event: # eventが正常にロードされた場合のみ実行
-              print("--- PARSED EVENT TOP-LEVEL KEYS ---")
-              print(list(event.keys())) # 辞書のキーをリストとして表示
-              print("--- END OF PARSED EVENT TOP-LEVEL KEYS ---")
-
-              if 'pull_request' in event:
-                  pr_data = event.get('pull_request', {})
-                  print("--- PULL_REQUEST OBJECT KEYS ---")
-                  print(list(pr_data.keys()))
-                  print("--- END PULL_REQUEST OBJECT KEYS ---")
-
-                  if 'head' in pr_data:
-                      print("--- PULL_REQUEST.HEAD OBJECT (first 200 chars) ---")
-                      print(json.dumps(pr_data['head'])[:200]+"...") # headオブジェクトのJSON文字列の冒頭を表示
-                      print("Source branch (head.ref):", pr_data.get('head', {}).get('ref'))
-                      print("--- END PULL_REQUEST.HEAD ---")
-                  else:
-                      print("!!! pull_request.head object NOT FOUND!")
-
-                  if 'base' in pr_data:
-                      print("--- PULL_REQUEST.BASE OBJECT (first 200 chars) ---")
-                      print(json.dumps(pr_data['base'])[:200]+"...") # baseオブジェクトのJSON文字列の冒頭を表示
-                      print("Target branch (base.ref):", pr_data.get('base', {}).get('ref'))
-                      print("--- END PULL_REQUEST.BASE ---")
-                  else:
-                      print("!!! pull_request.base object NOT FOUND!")
-              else:
-                  print("--- 'pull_request' key NOT in event ---")
-          else:
-              print("!!! 'event' dictionary is empty, skipping detailed checks.")
-
-          print("--- PROCEEDING WITH ORIGINAL SCRIPT LOGIC (IF EVENT LOADED) ---")
-          sys.stdout.flush() # 強制的にバッファをフラッシュ
-          # ===== ここまでデバッグコード =====
-
-          # 以下、元のスクリプト (event辞書が空の場合の考慮が必要になるかもしれません)
-          # open(os.environ['GITHUB_EVENT_PATH']) は上記で処理済みのため、
-          # event 変数をそのまま使用します。
+          with open(os.environ['GITHUB_EVENT_PATH']) as f:
+              event = json.load(f)
 
           message = None
-          event_name = os.environ.get('GITHUB_EVENT_NAME', '') # GITHUB_EVENT_NAMEも上記で表示済み
-          
-          # eventが空でないことを確認
-          if not event:
-              print("Critical: event data is missing. Exiting.")
-              exit(1)
+          event_name = os.environ['GITHUB_EVENT_NAME']
+          repo_full_name = event.get('repository', {}).get('full_name')
 
-          repo_info = event.get('repository')
-          if not repo_info or 'full_name' not in repo_info:
-              print("Critical: repository full_name is missing in event data. Exiting.")
-              # repo 変数がこの後使われるため、ここでチェック
-              # 実際の値でフォールバックするか、エラー終了するかを決定
-              repo = "unknown/repository" # フォールバック例
-              # exit(1) # または終了
-          else:
-              repo = repo_info['full_name']
+          if not repo_full_name:
+              print("Error: Repository full_name not found in event payload.")
+              sys.exit(1)
 
+          pr_link = ""
+          title = ""
+          number = None
 
+          # --- Pull Request イベント処理 ---
           if event_name == 'pull_request':
-              pr = event.get('pull_request', {}) # event['pull_request'] が存在しない可能性も考慮
+              pr = event.get('pull_request', {})
+              action = event.get('action')
+
               if not pr:
-                  print("Event is pull_request, but pull_request data is missing.")
+                  print(f"Error: 'pull_request' object not found in {event_name} event.")
+                  sys.exit(1)
+
+              number = pr.get('number')
+              title = pr.get('title', 'N/A')
+              pr_user_login = pr.get('user', {}).get('login', 'unknown user')
+
+              if number is not None:
+                  pr_link = f"<https://github.com/{repo_full_name}/pull/{number}|#{number}>"
               else:
-                  title = pr.get('title', 'No Title')
-                  user_data = pr.get('user', {})
-                  user = user_data.get('login', 'unknown user')
-                  # 'number'はトップレベルにある場合とPRオブジェクト内にある場合がある
-                  number = event.get('number', pr.get('number', 'N/A'))
-                  pr_link = f"<https://github.com/{repo}/pull/{number}|#{number}>"
-                  action = event.get('action', 'unknown action') # event['action'] が存在しない可能性も考慮
-                  
+                  print("Error: Pull request number not found.")
+                  pr_link = "[Link N/A]"
+
+              if action == 'opened':
                   head_branch = pr.get('head', {}).get('ref', 'unknown branch')
                   base_branch = pr.get('base', {}).get('ref', 'unknown branch')
-                  message = f":git: {pr_link} {title}\nPR by {user} was *{action}* ({head_branch} → {base_branch})"
+                  message = f":git_new_pr: {pr_link} {title}\nPR Created by {pr_user_login} ({head_branch} → {base_branch})"
+
+              elif action == 'edited':
+                  editor = event.get('sender', {}).get('login', 'unknown user')
+                  message = f":pencil2: {pr_link} {title}\nPR Body Edited by {editor}"
+
+              elif action == 'closed':
+                  if pr.get('merged') == True:
+                      merger = pr.get('merged_by', {}).get('login', 'unknown user')
+                      base_branch = pr.get('base', {}).get('ref', 'unknown branch')
+                      message = f":git_merge: {pr_link} {title}\nPR Merged by {merger} into {base_branch}"
+                  else:
+                      closer = event.get('sender', {}).get('login', 'unknown user')
+                      message = f":git_closed: {pr_link} {title}\nPR Closed by {closer}"
+
+              elif action == 'reopened':
+                  reopener = event.get('sender', {}).get('login', 'unknown user')
+                  message = f":git_reopened: {pr_link} {title}\nPR Reopened by {reopener}"
+
+              elif action == 'ready_for_review':
+                  sender_login = event.get('sender', {}).get('login', 'unknown user')
+                  message = f":eyes: {pr_link} {title}\nPR Marked as Ready for Review by {sender_login}"
+
+          # --- Pull Request Review イベント処理 (承認など) ---
+          elif event_name == 'pull_request_review':
+              review = event.get('review', {})
+              pr = event.get('pull_request', {})
+
+              if not review or not pr:
+                  print(f"Error: 'review' or 'pull_request' object not found in {event_name} event.")
+                  sys.exit(1)
+
+              review_action = event.get('action') # "submitted", "edited", "dismissed"
+
+              if review_action == 'submitted':
+                  review_state = review.get('state')
+                  reviewer = review.get('user', {}).get('login', 'unknown user')
+
+                  number = pr.get('number')
+                  title = pr.get('title', 'N/A')
+                  if number is not None:
+                      pr_link = f"<https://github.com/{repo_full_name}/pull/{number}|#{number}>"
+                  else:
+                      pr_link = "[Link N/A]"
+
+                  if review_state == 'approved':
+                      message = f":white_check_mark: {pr_link} {title}\nPR Approved by {reviewer}"
+                  elif review_state == 'changes_requested':
+                      message = f":warning: {pr_link} {title}\nChanges Requested by {reviewer}"
+                  elif review_state == 'commented':
+                      print(f"Review submitted with comments by {reviewer}, state: {review_state}. Notification for generic review comments is not configured in this path.")
+                      comment_body = review.get('body', '').strip()
+                      lines = comment_body.splitlines()
+                      if len(lines) > 4:
+                         comment_body = "\n".join(lines[:4] + ['...'])
+                      message = f":speech_balloon: {pr_link} {title}\nReview Comment by {reviewer}:\n{comment_body}"
 
 
+          # --- Issue Comment イベント処理 (PRへのコメント) ---
           elif event_name == 'issue_comment' and event.get('issue', {}).get('pull_request'):
               comment_data = event.get('comment', {})
-              if not comment_data:
-                  print("Event is issue_comment, but comment data is missing.")
+              issue_data = event.get('issue', {})
+
+              if not comment_data or not issue_data:
+                  print(f"Error: 'comment' or 'issue' object not found in {event_name} event on a PR.")
+                  sys.exit(1)
+
+              commenter = comment_data.get('user', {}).get('login', 'unknown user')
+
+              if 'copilot' in commenter.lower() or '[bot]' in commenter.lower():
+                  print(f"Comment from {commenter}. Skipping.")
+                  sys.exit(0)
+
+              body = comment_data.get('body', '').strip()
+              lines = body.splitlines()
+              if len(lines) > 4:
+                  body = "\n".join(lines[:4] + ['...'])
+
+              number = issue_data.get('number')
+              title = issue_data.get('title', 'N/A')
+              if number is not None:
+                  pr_link = f"<https://github.com/{repo_full_name}/pull/{number}|#{number}>"
               else:
-                  commenter_data = comment_data.get('user',{})
-                  commenter = commenter_data.get('login', 'unknown commenter')
-                  if 'copilot' in commenter.lower() or '[bot]' in commenter.lower(): # [bot]も除外する例
-                      print(f"Comment from {commenter}. Skipping.")
-                      exit(0)
+                  pr_link = "[Link N/A]"
 
-                  body = comment_data.get('body', '')
-                  lines = body.strip().splitlines()
-                  if len(lines) > 4:
-                      body = "\n".join(lines[:4] + ['...'])
+              message = f":speech_balloon: {pr_link} {title}\nComment by {commenter}:\n{body}"
 
-                  issue_data = event.get('issue', {})
-                  number = issue_data.get('number', 'N/A')
-                  pr_title = issue_data.get('title', 'No PR Title')
-                  pr_link = f"<https://github.com/{repo}/pull/{number}|#{number}>"
-                  message = f":speech_balloon: {pr_link} {pr_title}\nComment by {commenter}:\n{body}"
-
+          # --- メッセージが設定されていれば payload.json に書き出す ---
           if message:
               with open('payload.json', 'w') as f:
                   json.dump({"text": message}, f)
-              print("Payload written to payload.json.")
+              print(f"Payload written for event: {event_name}, action: {event.get('action', 'N/A')}")
           else:
-              print("No relevant message to send for this event.")
-              # exit(0) # ここで exit(0) すると Slack 通知ステップもスキップされる
-
+              print(f"No relevant message generated for event: {event_name}, action: {event.get('action', 'N/A')}. Skipping Slack notification.")
+              sys.exit(0)
         shell: python
         env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }} # Pythonスクリプト内でイベント名を取得するために設定
+
+      - name: Send Slack message
+        if: success() && steps.generate_payload.outcome == 'success' # Pythonスクリプトが成功した場合のみ実行 (messageがNoneでexit(0)した場合もこのステップは実行される)
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload-file-path: ./payload.json
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
