@@ -23,6 +23,12 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Print GitHub event JSON
+        run: |
+          echo "GitHub Event JSON:"
+          cat ${{ github.event_path }}
+        shell: bash
+
       - name: Generate Slack payload
         id: generate_payload
         run: |
