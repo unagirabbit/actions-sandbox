@@ -118,11 +118,16 @@ jobs:
                       message = f":warning: {pr_link} {title}\nChanges Requested by {reviewer}"
                   elif review_state == 'commented':
                       print(f"Review submitted with comments by {reviewer}, state: {review_state}. Notification for generic review comments is not configured in this path.")
-                      comment_body = review.get('body', '').strip()
-                      lines = comment_body.splitlines()
-                      if len(lines) > 4:
-                         comment_body = "\n".join(lines[:4] + ['...'])
-                      message = f":speech_balloon: {pr_link} {title}\nReview Comment by {reviewer}:\n{comment_body}"
+                      comment_text_from_review = review.get('body') # bodyを取得 (Noneの可能性あり)
+                      final_comment_body = "" # 表示用の最終的なコメント本文、デフォルトは空文字列
+
+                      if isinstance(comment_text_from_review, str): # bodyが文字列の場合のみ処理
+                          final_comment_body = comment_text_from_review.strip() # 前後の空白を除去
+                          lines = final_comment_body.splitlines()
+                          if len(lines) > 4:
+                              final_comment_body = "\n".join(lines[:4] + ['...']) # 4行に丸める
+                      # comment_text_from_reviewがNoneの場合、final_comment_bodyは""のまま
+                      message = f":speech_balloon: {pr_link} {title}\nReview Comment by {reviewer}:\n{final_comment_body}"
 
 
           # --- Issue Comment イベント処理 (PRへのコメント) ---
