@@ -32,18 +32,18 @@ jobs:
 
           # --- 確認用に追加 ---
           if 'pull_request' in event:
-              pr_data = event['pull_request']
-              print("Keys in pull_request object:", pr_data.keys())
-              if 'head' in pr_data:
-                  print("Keys in pull_request.head object:", pr_data['head'].keys())
-                  print("Source branch (head.ref):", pr_data['head'].get('ref'))
-              else:
-                  print("pull_request.head object NOT FOUND!")
-              if 'base' in pr_data:
-                  print("Keys in pull_request.base object:", pr_data['base'].keys())
-                  print("Target branch (base.ref):", pr_data['base'].get('ref'))
-              else:
-                  print("pull_request.base object NOT FOUND!")
+            pr_data = event['pull_request']
+            print("Keys in pull_request object:", pr_data.keys())
+            if 'head' in pr_data:
+                print("Keys in pull_request.head object:", pr_data['head'].keys())
+                print("Source branch (head.ref):", pr_data['head'].get('ref'))
+            else:
+                print("pull_request.head object NOT FOUND!")
+            if 'base' in pr_data:
+                print("Keys in pull_request.base object:", pr_data['base'].keys())
+                print("Target branch (base.ref):", pr_data['base'].get('ref'))
+            else:
+                print("pull_request.base object NOT FOUND!")
           # --- ここまで ---
 
           message = None
